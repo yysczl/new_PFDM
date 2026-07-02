@@ -1,0 +1,45 @@
+# macOS
+.DS_Store
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.ipynb_checkpoints/
+.venv/
+venv/
+
+# IDE / tool state
+.idea/
+*.iml
+.cadence/
+.mplconfig/
+
+# Private / large experiment data
+teenager_ppg/
+# data/
+
+# Training outputs
+PFDM/outputs/
+outputs/
+runs/
+logs/
+
+# Model artifacts
+*.pt
+*.pth
+*.ckpt
+*.pkl
+*.joblib
+*.onnx
+*.h5
+*.npy
+*.npz
+
+# Raw media
+*.mp4
+*.mov
+*.avi
+*.mkv

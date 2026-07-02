@@ -1,0 +1,51 @@
+data:
+  # ppg_dir: ../data/ppg_3000_cubic
+  ppg_dir: ../data/rppg
+  # prv_dir: ../data/prv_3000_cubic
+  prv_dir: ../data/hr
+  prv_report: ../data/prv_3000_cubic/prv_extraction_report.csv
+  emotions: [calm, fearness, happiness, sadness, tension]
+  target_col: stress_score
+
+train:
+  epochs: 100
+  folds: 5
+  val_ratio: 0.2
+  split: stratified_random
+  seed: 42
+  batch_size: 32
+  lr: 0.0008
+  weight_decay: 0.001
+  device: auto
+  loss: huber
+  paper_curves: true
+  smooth_window: 5
+
+calibrator:
+  ridge_alpha: 30.0
+
+regularization:
+  input_noise_std: 0.01
+
+experiment:
+  name: pfdm_main_identity_fixed_strong_regularized_a022
+  emotion: all
+  modalities: both
+  alpha: 0.22
+  calibrator_mode: identity_ridge
+  fusion: cross_attention
+  task_mode: uncertainty
+  cycle_encoding: true
+  frequency_branch: true
+  stress_gate: true
+
+model:
+  sample_rate: 100.0
+  ppg_channels: 32
+  prv_channels: 24
+  embedding_size: 48
+  hidden_size: 64
+  transformer_layers: 1
+  transformer_heads: 4
+  dropout: 0.40
+  num_emotions: 5
