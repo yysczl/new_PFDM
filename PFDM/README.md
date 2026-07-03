@@ -20,6 +20,16 @@ python PFDM/train.py \
   --task-mode uncertainty \
   --calibrator-mode identity_ridge \
   --alpha 0.22
+
+python PFDM/train.py \
+  --modalities both \
+  --fusion cross_attention \
+  --task-mode uncertainty \
+  --calibrator-mode identity_ridge \
+  --alpha 0.5 \
+  --emotion calm \
+  --experiment new_rppg_calm_0.5 \
+  --cross-emotion-calibration
 ```
 
 如果不传这些参数，`PFDM/config.yaml` 中的默认实验名和 alpha 也已设置为该主实验口径。

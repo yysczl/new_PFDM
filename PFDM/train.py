@@ -64,6 +64,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--task-mode", choices=["stress_only", "fixed_multitask", "uncertainty"], default=cfg["experiment"]["task_mode"])
     parser.add_argument("--alpha", type=float, default=float(cfg["experiment"]["alpha"]))
     parser.add_argument("--calibrator-mode", choices=["none", "stats_ridge", "identity_ridge"], default=cfg["experiment"].get("calibrator_mode", "identity_ridge"))
+    parser.add_argument(
+        "--cross-emotion-calibration",
+        action="store_true",
+        help="For single-emotion experiments, fit the calibrator with all non-target emotion rows plus target-emotion train rows.",
+    )
     parser.add_argument("--split", choices=["random", "stratified_random"], default=cfg["train"]["split"])
     parser.add_argument("--folds", type=int, default=int(cfg["train"]["folds"]))
     parser.add_argument("--epochs", type=int, default=int(cfg["train"]["epochs"]))
@@ -91,6 +96,10 @@ def parse_args() -> argparse.Namespace:
         raise ValueError("--alpha must be between 0 and 1")
     if args.progress_every < 0:
         raise ValueError("--progress-every must be non-negative")
+    if args.cross_emotion_calibration and args.emotion == "all":
+        raise ValueError("--cross-emotion-calibration is only defined for single-emotion experiments")
+    if args.cross_emotion_calibration and args.calibrator_mode == "none":
+        raise ValueError("--cross-emotion-calibration requires --calibrator-mode stats_ridge or identity_ridge")
     return args
 
 
@@ -218,6 +227,13 @@ def calibrator_predict(calibrator: FoldCalibrator, data: PFDMData, idx: np.ndarr
     return calibrator.model.predict(calibrator.scaler.transform(features)).astype(np.float32)
 
 
+def cross_emotion_calibration_indices(data: PFDMData, target_emotion: str, target_train_sample_ids: np.ndarray) -> np.ndarray:
+    target_train_sample_ids = target_train_sample_ids.astype(np.int64)
+    is_other_emotion = data.emotion_name != target_emotion
+    is_target_train = (data.emotion_name == target_emotion) & np.isin(data.sample_id.astype(np.int64), target_train_sample_ids)
+    return np.flatnonzero(is_other_emotion | is_target_train)
+
+
 def build_model(args: argparse.Namespace, stats_size: int) -> DualStreamPFDM:
     model_cfg = args.config_values["model"]
     return DualStreamPFDM(
@@ -239,7 +255,16 @@ def build_model(args: argparse.Namespace, stats_size: int) -> DualStreamPFDM:
     )
 
 
-def run_fold(args: argparse.Namespace, data: PFDMData, fold: int, trainval_idx: np.ndarray, test_idx: np.ndarray, output_dir: Path, device: torch.device) -> Dict[str, float | int]:
+def run_fold(
+    args: argparse.Namespace,
+    data: PFDMData,
+    fold: int,
+    trainval_idx: np.ndarray,
+    test_idx: np.ndarray,
+    output_dir: Path,
+    device: torch.device,
+    calibration_data: PFDMData | None = None,
+) -> Dict[str, float | int]:
     train_idx, val_idx = train_val_split(trainval_idx, data.stress, args.val_ratio, args.seed + fold)
     arrays = prepare_fold_arrays(data, train_idx, val_idx, test_idx)
     train_loader = make_loader(data, train_idx, arrays["train"], args.batch_size, True)
@@ -299,7 +324,12 @@ def run_fold(args: argparse.Namespace, data: PFDMData, fold: int, trainval_idx: 
 
     model.load_state_dict(torch.load(fold_dir / "best_model.pt", map_location=device))
     ridge_alpha = float(args.config_values.get("calibrator", {}).get("ridge_alpha", 1.0))
-    calibrator = fit_calibrator(data, train_idx, args.calibrator_mode, ridge_alpha)
+    calibrator_data = data
+    calibrator_idx = train_idx
+    if calibration_data is not None:
+        calibrator_data = calibration_data
+        calibrator_idx = cross_emotion_calibration_indices(calibration_data, args.emotion, data.sample_id[train_idx])
+    calibrator = fit_calibrator(calibrator_data, calibrator_idx, args.calibrator_mode, ridge_alpha)
     result_rows = []
     metrics: Dict[str, Dict[str, float]] = {}
     for split, idx in {"train": train_idx, "val": val_idx, "test": test_idx}.items():
@@ -372,6 +402,7 @@ def write_readable_summary(output_dir: Path, args: argparse.Namespace, summary: 
         f"Task mode: `{args.task_mode}`",
         f"Alpha: `{args.alpha:.3f}`",
         f"Calibrator: `{args.calibrator_mode}`",
+        f"Cross-emotion calibration: `{bool(args.cross_emotion_calibration)}`",
         f"Epochs: `{args.epochs}`",
         "",
         "## Metrics Summary",
@@ -418,13 +449,16 @@ def main() -> None:
     output_dir.mkdir(parents=True)
 
     data = load_pfdm_data(args.ppg_dir.resolve(), args.prv_dir.resolve(), args.emotion, args.prv_report.resolve())
+    calibration_data = None
+    if args.cross_emotion_calibration:
+        calibration_data = load_pfdm_data(args.ppg_dir.resolve(), args.prv_dir.resolve(), "all", args.prv_report.resolve())
     fold_pairs = split_indices(data.stress, args.split, args.folds, args.seed)
     if args.limit_folds > 0:
         fold_pairs = fold_pairs[: args.limit_folds]
     rows = []
     for fold, (trainval_idx, test_idx) in enumerate(fold_pairs, start=1):
         print(f"[fold {fold}] trainval={len(trainval_idx)} test={len(test_idx)}")
-        rows.append(run_fold(args, data, fold, trainval_idx, test_idx, output_dir, device))
+        rows.append(run_fold(args, data, fold, trainval_idx, test_idx, output_dir, device, calibration_data))
 
     by_fold = pd.DataFrame(rows)
     summary = summarize_by_fold(by_fold)
