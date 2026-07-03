@@ -207,6 +207,76 @@ python PFDM/train.py --experiment modality_prv --modalities prv --task-mode unce
 python PFDM/train.py --experiment modality_both --modalities both --fusion cross_attention --task-mode uncertainty --calibrator-mode identity_ridge --alpha 0.22
 ```
 
+## Baseline 对比实验
+
+Baseline 代码独立于 PFDM 主模型入口：
+
+| 文件 | 作用 |
+|---|---|
+| `PFDM/baseline_models.py` | MLP、1D-CNN、ResNet1D、InceptionTime、GRU、CNN-GRU、TCN、Vanilla Transformer |
+| `PFDM/train_baselines.py` | 统一五折训练、统计模型、校准器、汇总输出 |
+
+支持的 baseline：
+
+```text
+stats_ridge, stats_svr, mlp, cnn1d, resnet1d, inceptiontime, gru, cnn_gru, tcn, transformer
+```
+
+支持的模态：
+
+```text
+rppg, hr, both
+```
+
+推荐运行：
+
+```bash
+source "$(conda info --base)/etc/profile.d/conda.sh"
+conda activate ppg
+
+python PFDM/train_baselines.py --model stats_ridge --modalities both
+python PFDM/train_baselines.py --model mlp --modalities both
+python PFDM/train_baselines.py --model cnn1d --modalities both
+python PFDM/train_baselines.py --model resnet1d --modalities both
+python PFDM/train_baselines.py --model inceptiontime --modalities both
+python PFDM/train_baselines.py --model gru --modalities both
+python PFDM/train_baselines.py --model cnn_gru --modalities both
+python PFDM/train_baselines.py --model tcn --modalities both
+python PFDM/train_baselines.py --model transformer --modalities both
+```
+
+Baseline 与主程序一样通过参数指定校准方式：
+
+```bash
+# 使用 identity_ridge + alpha 校准
+python PFDM/train_baselines.py --model cnn1d --modalities both --calibrator-mode identity_ridge --alpha 0.22 --experiment cnn1d_both_identity_a022
+
+# 纯模型 Raw 结果，不使用校准
+python PFDM/train_baselines.py --model cnn1d --modalities both --calibrator-mode none --alpha 0 --experiment cnn1d_both_raw
+```
+
+如果只想快速检查代码链路，不跑完整实验：
+
+```bash
+python PFDM/train_baselines.py --model cnn1d --modalities both --limit-folds 1 --epochs 2 --no-paper-curves
+```
+
+MLP 默认会把序列等距采样/补零到 `--mlp-steps 256` 后输入全连接网络，用来作为“不显式建模时序结构”的神经网络对照。
+
+GRU 在 CPU 上会明显慢一些。Baseline 脚本默认每 10 个 epoch 打印一次进度，纯 GRU 会先把长 rPPG 序列等距采样到 `--gru-max-steps 300` 再进入循环网络。如果想更快检查：
+
+```bash
+python PFDM/train_baselines.py --model gru --modalities both --batch-size 128 --gru-max-steps 64 --progress-every 1 --limit-folds 1 --epochs 5 --no-paper-curves
+```
+
+输出目录：
+
+```text
+PFDM/outputs_baselines/<model>_<modalities>/
+```
+
+每个 baseline 默认复用 PFDM 的随机五折、标准化、MAE/RMSE 指标和 `identity_ridge + alpha` 校准口径。`summary.md` 只输出当前参数指定的一套最终结果；如需 Raw 指标，使用 `--calibrator-mode none --alpha 0` 单独运行。
+
 ## 说明
 
 开题报告中的“60-100 bpm 生理周期编码”需要采样率才能严格落地。当前实现使用 `model.sample_rate=100`，如需调整请修改 `PFDM/config.yaml`。

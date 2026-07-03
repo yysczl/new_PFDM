@@ -75,6 +75,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--val-ratio", type=float, default=float(cfg["train"]["val_ratio"]))
     parser.add_argument("--smooth-window", type=int, default=int(cfg["train"]["smooth_window"]))
     parser.add_argument("--paper-curves", action=argparse.BooleanOptionalAction, default=bool(cfg["train"]["paper_curves"]))
+    parser.add_argument("--progress-every", type=int, default=10, help="Print training progress every N epochs. Use 0 to disable.")
     parser.add_argument("--no-cycle-encoding", action="store_true")
     parser.add_argument("--no-frequency-branch", action="store_true")
     parser.add_argument("--no-stress-gate", action="store_true")
@@ -88,6 +89,8 @@ def parse_args() -> argparse.Namespace:
         raise ValueError("PFDM paper experiments are fixed to 100 epochs. Keep --epochs 100.")
     if not 0.0 <= args.alpha <= 1.0:
         raise ValueError("--alpha must be between 0 and 1")
+    if args.progress_every < 0:
+        raise ValueError("--progress-every must be non-negative")
     return args
 
 
@@ -286,6 +289,13 @@ def run_fold(args: argparse.Namespace, data: PFDMData, fold: int, trainval_idx: 
         if val_metric["rmse"] < best_val:
             best_val = val_metric["rmse"]
             torch.save(model.state_dict(), fold_dir / "best_model.pt")
+        if args.progress_every > 0 and (epoch == 1 or epoch % args.progress_every == 0 or epoch == args.epochs):
+            print(
+                f"[fold {fold} epoch {epoch}/{args.epochs}] "
+                f"train_mae={train_metric['mae']:.3f} val_mae={val_metric['mae']:.3f} "
+                f"train_rmse={train_metric['rmse']:.3f} val_rmse={val_metric['rmse']:.3f} best_val={best_val:.3f}",
+                flush=True,
+            )
 
     model.load_state_dict(torch.load(fold_dir / "best_model.pt", map_location=device))
     ridge_alpha = float(args.config_values.get("calibrator", {}).get("ridge_alpha", 1.0))

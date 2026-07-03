@@ -23,6 +23,7 @@ teenager_ppg/
 
 # Training outputs
 PFDM/outputs/
+PFDM/outputs_baselines/
 outputs/
 runs/
 logs/
