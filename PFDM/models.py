@@ -149,7 +149,12 @@ class FusionBlock(nn.Module):
             self.ppg_to_prv = nn.MultiheadAttention(embedding_size, heads, dropout=dropout, batch_first=True)
         if mode == "cross_attention":
             self.prv_to_ppg = nn.MultiheadAttention(embedding_size, heads, dropout=dropout, batch_first=True)
-        self.out_size = embedding_size * 2
+        if mode == "cross_attention":
+            self.out_size = embedding_size * 4
+        elif mode == "oneway_attention":
+            self.out_size = embedding_size * 3
+        else:
+            self.out_size = embedding_size * 2
 
     def forward(self, ppg: Dict[str, torch.Tensor], prv: Dict[str, torch.Tensor]) -> torch.Tensor:
         if self.mode == "concat":
@@ -160,9 +165,10 @@ class FusionBlock(nn.Module):
         # PPG 对 PRV 做注意力：用 PPG 序列作为查询，去关注 PRV 序列中的相关信息，得到一个被 PRV 信息增强后的 ppg_feat。
         # 单向跨模态注意力采用 PPG-to-PRV attention，以 PPG 表征作为 Query，以 PRV 表征作为 Key/Value，引导 PPG 分支从 PRV 心率变异性特征中提取互补信息。
         if self.mode == "oneway_attention":
-            return torch.cat([ppg_feat, prv["pooled"]], dim=-1)
+            return torch.cat([ppg_feat, ppg["pooled"], prv["pooled"]], dim=-1)
         attended_prv, _ = self.prv_to_ppg(prv["tokens"], ppg["tokens"], ppg["tokens"], need_weights=False)
-        return torch.cat([ppg_feat, attended_prv.mean(dim=1)], dim=-1)
+        prv_feat = attended_prv.mean(dim=1)
+        return torch.cat([ppg_feat, prv_feat, ppg["pooled"], prv["pooled"]], dim=-1)
 
 
 class DualStreamPFDM(nn.Module):
