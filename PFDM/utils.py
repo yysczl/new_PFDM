@@ -76,14 +76,15 @@ def plot_curve(path: Path, rows: List[Dict[str, float | int]], train_key: str, v
     epochs = [int(row["epoch"]) for row in rows]
     train_values = moving_average([float(row[train_key]) for row in rows], smooth_window)
     val_values = moving_average([float(row[val_key]) for row in rows], smooth_window)
-    fig, ax = plt.subplots(figsize=(9, 5), dpi=160)
+    fig, ax = plt.subplots(figsize=(6.5, 4.8), dpi=160)
     ax.plot(epochs, train_values, label=f"Train {ylabel}", linewidth=2.0)
     ax.plot(epochs, val_values, label=f"Validation {ylabel}", linewidth=2.0)
-    ax.set_xlabel("Epoch")
-    ax.set_ylabel(ylabel)
-    ax.set_title(ylabel)
+    ax.set_xlabel("Epoch", fontsize=22)
+    ax.set_ylabel(ylabel, fontsize=22)
+    ax.set_title(ylabel, fontsize=24)
+    ax.tick_params(labelsize=20)
     ax.grid(True, linestyle="--", alpha=0.35)
-    ax.legend()
+    ax.legend(fontsize=20)
     fig.tight_layout()
     fig.savefig(path)
     plt.close(fig)
@@ -153,4 +154,3 @@ class FeatureStandardizer:
         if self.mean_ is None or self.std_ is None:
             raise RuntimeError("FeatureStandardizer must be fitted before transform")
         return ((x - self.mean_) / self.std_).astype(np.float32)
-

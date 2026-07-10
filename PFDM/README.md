@@ -14,12 +14,12 @@
 
 ```bash
 python PFDM/train.py \
-  --experiment pfdm_main_identity_fixed_strong_regularized_a022 \
+  --experiment rppg_pfdm_main_0.05 \
   --modalities both \
   --fusion cross_attention \
   --task-mode uncertainty \
   --calibrator-mode identity_ridge \
-  --alpha 0.22
+  --alpha 0.05
 
 python PFDM/train.py \
   --modalities both \
@@ -223,13 +223,13 @@ Baseline 代码独立于 PFDM 主模型入口：
 
 | 文件 | 作用 |
 |---|---|
-| `PFDM/baseline_models.py` | MLP、1D-CNN、ResNet1D、InceptionTime、GRU、CNN-GRU、TCN、Vanilla Transformer |
+| `PFDM/baseline_models.py` | MLP、FCN、1D-CNN、ResNet1D、InceptionTime、LSTM、GRU、CNN-GRU、TCN、Vanilla Transformer |
 | `PFDM/train_baselines.py` | 统一五折训练、统计模型、校准器、汇总输出 |
 
 支持的 baseline：
 
 ```text
-stats_ridge, stats_svr, mlp, cnn1d, resnet1d, inceptiontime, gru, cnn_gru, tcn, transformer
+stats_ridge, stats_svr, mlp, fcn, cnn1d, resnet1d, inceptiontime, lstm, gru, cnn_gru, tcn, transformer
 ```
 
 支持的模态：
@@ -246,9 +246,11 @@ conda activate ppg
 
 python PFDM/train_baselines.py --model stats_ridge --modalities both
 python PFDM/train_baselines.py --model mlp --modalities both
+python PFDM/train_baselines.py --model fcn --modalities both
 python PFDM/train_baselines.py --model cnn1d --modalities both
 python PFDM/train_baselines.py --model resnet1d --modalities both
 python PFDM/train_baselines.py --model inceptiontime --modalities both
+python PFDM/train_baselines.py --model lstm --modalities both
 python PFDM/train_baselines.py --model gru --modalities both
 python PFDM/train_baselines.py --model cnn_gru --modalities both
 python PFDM/train_baselines.py --model tcn --modalities both
@@ -273,9 +275,10 @@ python PFDM/train_baselines.py --model cnn1d --modalities both --limit-folds 1 -
 
 MLP 默认会把序列等距采样/补零到 `--mlp-steps 256` 后输入全连接网络，用来作为“不显式建模时序结构”的神经网络对照。
 
-GRU 在 CPU 上会明显慢一些。Baseline 脚本默认每 10 个 epoch 打印一次进度，纯 GRU 会先把长 rPPG 序列等距采样到 `--gru-max-steps 300` 再进入循环网络。如果想更快检查：
+LSTM/GRU 在 CPU 上会明显慢一些。Baseline 脚本默认每 10 个 epoch 打印一次进度，纯 LSTM/GRU 会先把长 rPPG 序列等距采样到 `--gru-max-steps 300` 再进入循环网络。如果想更快检查：
 
 ```bash
+python PFDM/train_baselines.py --model lstm --modalities both --batch-size 128 --gru-max-steps 64 --progress-every 1 --limit-folds 1 --epochs 5 --no-paper-curves
 python PFDM/train_baselines.py --model gru --modalities both --batch-size 128 --gru-max-steps 64 --progress-every 1 --limit-folds 1 --epochs 5 --no-paper-curves
 ```
 

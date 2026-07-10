@@ -8,7 +8,7 @@ from torch import nn
 import torch.nn.functional as F
 
 
-DEEP_BASELINES = ("mlp", "cnn1d", "resnet1d", "inceptiontime", "gru", "cnn_gru", "tcn", "transformer")
+DEEP_BASELINES = ("mlp", "fcn", "cnn1d", "resnet1d", "inceptiontime", "lstm", "gru", "cnn_gru", "tcn", "transformer")
 
 
 def downsample_sequence(x: torch.Tensor, max_steps: int) -> torch.Tensor:
@@ -94,6 +94,31 @@ class CNN1DEncoder(nn.Module):
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         tokens = self.net(x.transpose(1, 2)).transpose(1, 2)
         return self.norm(self.pool(tokens))
+
+
+class FCNEncoder(nn.Module):
+    def __init__(self, hidden_size: int, dropout: float) -> None:
+        super().__init__()
+        mid = max(hidden_size // 2, 16)
+        self.net = nn.Sequential(
+            nn.Conv1d(1, mid, kernel_size=7, padding=3),
+            nn.BatchNorm1d(mid),
+            nn.GELU(),
+            nn.Dropout(dropout),
+            nn.Conv1d(mid, hidden_size, kernel_size=5, padding=2),
+            nn.BatchNorm1d(hidden_size),
+            nn.GELU(),
+            nn.Dropout(dropout),
+            nn.Conv1d(hidden_size, hidden_size, kernel_size=3, padding=1),
+            nn.BatchNorm1d(hidden_size),
+            nn.GELU(),
+            nn.Dropout(dropout),
+        )
+        self.norm = nn.LayerNorm(hidden_size)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        tokens = self.net(x.transpose(1, 2))
+        return self.norm(tokens.mean(dim=-1))
 
 
 class ResNet1DBlock(nn.Module):
@@ -215,6 +240,29 @@ class GRUEncoder(nn.Module):
         return self.out(self.pool(self.dropout(tokens)))
 
 
+class LSTMEncoder(nn.Module):
+    def __init__(self, hidden_size: int, dropout: float, max_steps: int = 128) -> None:
+        super().__init__()
+        self.max_steps = max_steps
+        self.input_proj = nn.Linear(1, hidden_size)
+        self.lstm = nn.LSTM(
+            hidden_size,
+            hidden_size,
+            num_layers=1,
+            batch_first=True,
+            bidirectional=True,
+        )
+        self.dropout = nn.Dropout(dropout)
+        self.pool = AttentionPool1d(hidden_size * 2)
+        self.out = nn.Sequential(nn.Linear(hidden_size * 2, hidden_size), nn.LayerNorm(hidden_size), nn.GELU())
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        x = downsample_sequence(x, self.max_steps)
+        tokens = self.input_proj(x)
+        tokens, _ = self.lstm(tokens)
+        return self.out(self.pool(self.dropout(tokens)))
+
+
 class CNNGRUEncoder(nn.Module):
     def __init__(self, hidden_size: int, dropout: float) -> None:
         super().__init__()
@@ -333,12 +381,16 @@ def make_encoder(
 ) -> nn.Module:
     if model_name == "mlp":
         return MLPSequenceEncoder(hidden_size, dropout, steps=mlp_steps)
+    if model_name == "fcn":
+        return FCNEncoder(hidden_size, dropout)
     if model_name == "cnn1d":
         return CNN1DEncoder(hidden_size, dropout)
     if model_name == "resnet1d":
         return ResNet1DEncoder(hidden_size, dropout)
     if model_name == "inceptiontime":
         return InceptionTimeEncoder(hidden_size, dropout)
+    if model_name == "lstm":
+        return LSTMEncoder(hidden_size, dropout, max_steps=gru_max_steps)
     if model_name == "gru":
         return GRUEncoder(hidden_size, dropout, max_steps=gru_max_steps)
     if model_name == "cnn_gru":
