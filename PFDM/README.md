@@ -116,6 +116,7 @@ index, target, model_prediction, calibrator_prediction, prediction
 | `--modalities` | `ppg`、`prv`、`both` |
 | `--fusion` | `concat`、`oneway_attention`、`cross_attention` |
 | `--task-mode` | `stress_only`、`fixed_multitask`、`uncertainty` |
+| `--stats` / `--no-stats` | 是否在 PFDM 神经模型中拼接统计旁路特征，默认使用 |
 | `--no-cycle-encoding` | w/o 生理周期编码 |
 | `--no-frequency-branch` | w/o 频域分支 |
 | `--no-stress-gate` | w/o 压力感知门控 |
@@ -136,6 +137,8 @@ final_pred = (1 - alpha) * model_pred + alpha * calibrator_pred
 | `--calibrator-mode none` | 不使用校准器，纯 PFDM 深度模型 |
 | `--calibrator-mode stats_ridge` | 使用统计特征做普通 Ridge 校准 |
 | `--calibrator-mode identity_ridge` | 使用统计特征 + row identity one-hot + emotion one-hot 做随机五折校准 |
+
+`--no-stats` 只关闭 PFDM 神经模型里的统计特征拼接，不关闭校准器；如果仍使用 `stats_ridge` 或 `identity_ridge`，最终预测仍会按校准器配置使用统计特征。
 
 `identity_ridge` 适用于当前随机五折论文实验，不代表 GroupKFold 或跨被试泛化能力。
 

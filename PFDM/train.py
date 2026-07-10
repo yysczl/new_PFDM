@@ -81,6 +81,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--smooth-window", type=int, default=int(cfg["train"]["smooth_window"]))
     parser.add_argument("--paper-curves", action=argparse.BooleanOptionalAction, default=bool(cfg["train"]["paper_curves"]))
     parser.add_argument("--progress-every", type=int, default=10, help="Print training progress every N epochs. Use 0 to disable.")
+    parser.add_argument("--stats", action=argparse.BooleanOptionalAction, default=bool(cfg["experiment"].get("use_stats", True)), help="Use statistical side features in the PFDM neural model.")
     parser.add_argument("--no-cycle-encoding", action="store_true")
     parser.add_argument("--no-frequency-branch", action="store_true")
     parser.add_argument("--no-stress-gate", action="store_true")
@@ -249,6 +250,7 @@ def build_model(args: argparse.Namespace, stats_size: int) -> DualStreamPFDM:
         dropout=float(model_cfg["dropout"]),
         sample_rate=float(model_cfg["sample_rate"]),
         stats_size=stats_size,
+        use_stats=args.stats,
         use_cycle_encoding=not args.no_cycle_encoding,
         use_frequency_branch=not args.no_frequency_branch,
         use_stress_gate=not args.no_stress_gate,
@@ -400,6 +402,7 @@ def write_readable_summary(output_dir: Path, args: argparse.Namespace, summary: 
         f"Modalities: `{args.modalities}`",
         f"Fusion: `{args.fusion}`",
         f"Task mode: `{args.task_mode}`",
+        f"Stats side features: `{args.stats}`",
         f"Alpha: `{args.alpha:.3f}`",
         f"Calibrator: `{args.calibrator_mode}`",
         f"Cross-emotion calibration: `{bool(args.cross_emotion_calibration)}`",

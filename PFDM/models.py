@@ -187,6 +187,7 @@ class DualStreamPFDM(nn.Module):
         sample_rate: float = 100.0,
         num_emotions: int = 5,
         stats_size: int = 22,
+        use_stats: bool = True,
         use_cycle_encoding: bool = True,
         use_frequency_branch: bool = True,
         use_stress_gate: bool = True,
@@ -198,6 +199,7 @@ class DualStreamPFDM(nn.Module):
             raise ValueError("task_mode must be stress_only, fixed_multitask, or uncertainty")
         self.modalities = modalities
         self.task_mode = task_mode
+        self.use_stats = use_stats and stats_size > 0
         if modalities in {"ppg", "both"}:
             self.ppg_encoder = PPGFormerEncoder(
                 ppg_channels,
@@ -217,8 +219,9 @@ class DualStreamPFDM(nn.Module):
             fused_size = self.fusion.out_size
         else:
             fused_size = embedding_size
-        self.stats_encoder = nn.Sequential(nn.Linear(stats_size, 32), nn.LayerNorm(32), nn.GELU(), nn.Dropout(dropout))
-        fused_size += 32
+        if self.use_stats:
+            self.stats_encoder = nn.Sequential(nn.Linear(stats_size, 32), nn.LayerNorm(32), nn.GELU(), nn.Dropout(dropout))
+            fused_size += 32
         self.shared = nn.Sequential(
             nn.Linear(fused_size, hidden_size),
             nn.LayerNorm(hidden_size),
@@ -244,7 +247,8 @@ class DualStreamPFDM(nn.Module):
             ppg = self.ppg_encoder(batch["ppg"])
             prv = self.prv_encoder(batch["prv"], batch.get("prv_mask"))
             fused = self.fusion(ppg, prv)
-        fused = torch.cat([fused, self.stats_encoder(batch["stats"])], dim=-1)
+        if self.use_stats:
+            fused = torch.cat([fused, self.stats_encoder(batch["stats"])], dim=-1)
         shared = self.shared(fused)
         out: Dict[str, torch.Tensor] = {"stress": self.stress_head(shared).squeeze(-1)}
         if self.task_mode != "stress_only":
