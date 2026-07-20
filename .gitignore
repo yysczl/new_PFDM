@@ -27,6 +27,7 @@ PFDM/outputs_baselines/
 outputs/
 runs/
 logs/
+docs/
 
 # Model artifacts
 *.pt
