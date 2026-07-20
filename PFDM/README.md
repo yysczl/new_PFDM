@@ -4,6 +4,9 @@
 
 - 修复 train split 指标对齐问题。
 - 使用偏强正则配置减轻 PFDM 深度模型过拟合。
+- 使用 50-150 bpm 复合位置编码、序列级三分支和通道-时间门控建模 rPPG。
+- 使用双向交叉注意力、门控残差和样本自适应权重融合 rPPG 与 PRV。
+- 联合优化压力回归与五类情绪分类。
 - 使用 `identity_ridge + alpha` 作为随机五折论文目标区间校准。
 - 固定训练 100 epoch。
 - 支持单情绪/融合情绪、PPG-only/PRV-only/PPG+PRV、模型消融和任务消融。
@@ -61,6 +64,7 @@ experiment:
   modalities: both
   fusion: cross_attention
   task_mode: uncertainty
+  use_stats: false
 
 model:
   ppg_channels: 32
@@ -70,6 +74,8 @@ model:
   transformer_layers: 1
   transformer_heads: 4
   dropout: 0.40
+  min_bpm: 50.0
+  max_bpm: 150.0
 ```
 
 ## 当前指标口径
@@ -116,10 +122,12 @@ index, target, model_prediction, calibrator_prediction, prediction
 | `--modalities` | `ppg`、`prv`、`both` |
 | `--fusion` | `concat`、`oneway_attention`、`cross_attention` |
 | `--task-mode` | `stress_only`、`fixed_multitask`、`uncertainty` |
-| `--stats` / `--no-stats` | 是否在 PFDM 神经模型中拼接统计旁路特征，默认使用 |
+| `--stats` / `--no-stats` | 是否在 PFDM 神经模型中拼接统计旁路特征，主模型默认关闭 |
 | `--no-cycle-encoding` | w/o 生理周期编码 |
 | `--no-frequency-branch` | w/o 频域分支 |
-| `--no-stress-gate` | w/o 压力感知门控 |
+| `--no-stress-gate` | w/o 通道-时间门控 |
+| `--no-anti-alias` | 使用普通步长卷积，关闭抗混叠下采样 |
+| `--min-bpm` / `--max-bpm` | 生理周期编码范围，默认 50-150 bpm |
 
 模型容量、dropout、Transformer 层数、Ridge 正则和输入噪声均从 `config.yaml` 读取。
 
@@ -191,9 +199,11 @@ PFDM/outputs/<experiment>/
 PPG-Former 消融：
 
 ```bash
-python PFDM/train.py --experiment ablate_no_cycle --modalities both --fusion cross_attention --task-mode uncertainty --calibrator-mode identity_ridge --alpha 0.22 --no-cycle-encoding
-python PFDM/train.py --experiment ablate_no_freq --modalities both --fusion cross_attention --task-mode uncertainty --calibrator-mode identity_ridge --alpha 0.22 --no-frequency-branch
-python PFDM/train.py --experiment ablate_no_gate --modalities both --fusion cross_attention --task-mode uncertainty --calibrator-mode identity_ridge --alpha 0.22 --no-stress-gate
+python PFDM/train.py --experiment ablate_ppg_narrow_bpm --modalities ppg --task-mode uncertainty --calibrator-mode identity_ridge --alpha 0.22 --min-bpm 60 --max-bpm 100
+python PFDM/train.py --experiment ablate_ppg_no_cycle --modalities ppg --task-mode uncertainty --calibrator-mode identity_ridge --alpha 0.22 --no-cycle-encoding
+python PFDM/train.py --experiment ablate_ppg_no_freq --modalities ppg --task-mode uncertainty --calibrator-mode identity_ridge --alpha 0.22 --no-frequency-branch
+python PFDM/train.py --experiment ablate_ppg_no_gate --modalities ppg --task-mode uncertainty --calibrator-mode identity_ridge --alpha 0.22 --no-stress-gate
+python PFDM/train.py --experiment ablate_ppg_no_antialias --modalities ppg --task-mode uncertainty --calibrator-mode identity_ridge --alpha 0.22 --no-anti-alias
 ```
 
 双流融合消融：
@@ -295,6 +305,6 @@ PFDM/outputs_baselines/<model>_<modalities>/
 
 ## 说明
 
-开题报告中的“60-100 bpm 生理周期编码”需要采样率才能严格落地。当前实现使用 `model.sample_rate=100`，如需调整请修改 `PFDM/config.yaml`。
+生理周期编码按原始 100 Hz 采样率和卷积总降采样倍数 16 计算 token 时间，默认覆盖 50-150 bpm。可通过 `--min-bpm` 和 `--max-bpm` 做范围敏感性实验。
 
 当前 `PFDM/outputs/` 可保留多次 PFDM 实验结果目录，每个目录都使用同一套 `summary.md` 汇总格式。根目录下历史 `outputs_paper_*` 不属于 PFDM 最终工程的一部分。

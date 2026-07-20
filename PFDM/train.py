@@ -85,6 +85,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--no-cycle-encoding", action="store_true")
     parser.add_argument("--no-frequency-branch", action="store_true")
     parser.add_argument("--no-stress-gate", action="store_true")
+    parser.add_argument("--no-anti-alias", action="store_true")
+    parser.add_argument("--min-bpm", type=float, default=float(cfg["model"].get("min_bpm", 50.0)))
+    parser.add_argument("--max-bpm", type=float, default=float(cfg["model"].get("max_bpm", 150.0)))
     parser.add_argument("--ppg-dir", type=Path, default=resolve_path(cfg["data"]["ppg_dir"]))
     parser.add_argument("--prv-dir", type=Path, default=resolve_path(cfg["data"]["prv_dir"]))
     parser.add_argument("--prv-report", type=Path, default=resolve_path(cfg["data"]["prv_report"]))
@@ -97,6 +100,8 @@ def parse_args() -> argparse.Namespace:
         raise ValueError("--alpha must be between 0 and 1")
     if args.progress_every < 0:
         raise ValueError("--progress-every must be non-negative")
+    if args.min_bpm <= 0 or args.max_bpm <= args.min_bpm:
+        raise ValueError("expected 0 < --min-bpm < --max-bpm")
     if args.cross_emotion_calibration and args.emotion == "all":
         raise ValueError("--cross-emotion-calibration is only defined for single-emotion experiments")
     if args.cross_emotion_calibration and args.calibrator_mode == "none":
@@ -169,10 +174,9 @@ def compute_loss(output: Dict[str, torch.Tensor], batch: Dict[str, torch.Tensor]
     if task_mode == "stress_only":
         return loss_stress
     loss_emotion = F.cross_entropy(output["emotion"], batch["emotion"])
-    loss_aux = F.huber_loss(output["aux"], batch["aux"], delta=1.0)
     if task_mode == "fixed_multitask":
-        return loss_stress + 0.2 * loss_emotion + 0.2 * loss_aux
-    losses = torch.stack([loss_stress, loss_emotion, loss_aux])
+        return loss_stress + 0.2 * loss_emotion
+    losses = torch.stack([loss_stress, loss_emotion])
     log_vars = output["log_vars"]
     return torch.sum(torch.exp(-log_vars) * losses + log_vars)
 
@@ -254,6 +258,9 @@ def build_model(args: argparse.Namespace, stats_size: int) -> DualStreamPFDM:
         use_cycle_encoding=not args.no_cycle_encoding,
         use_frequency_branch=not args.no_frequency_branch,
         use_stress_gate=not args.no_stress_gate,
+        min_bpm=args.min_bpm,
+        max_bpm=args.max_bpm,
+        use_anti_alias=not args.no_anti_alias,
     )
 
 
@@ -403,6 +410,8 @@ def write_readable_summary(output_dir: Path, args: argparse.Namespace, summary: 
         f"Fusion: `{args.fusion}`",
         f"Task mode: `{args.task_mode}`",
         f"Stats side features: `{args.stats}`",
+        f"Physiological BPM range: `{args.min_bpm:g}-{args.max_bpm:g}`",
+        f"Anti-alias downsampling: `{not args.no_anti_alias}`",
         f"Alpha: `{args.alpha:.3f}`",
         f"Calibrator: `{args.calibrator_mode}`",
         f"Cross-emotion calibration: `{bool(args.cross_emotion_calibration)}`",
