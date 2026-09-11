@@ -41,7 +41,7 @@ experiment:
   use_stats: false
 
 model:
-  sample_rate: 100.0
+  sample_rate: 20.0
   ppg_channels: 32
   prv_channels: 24
   embedding_size: 48

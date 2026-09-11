@@ -82,10 +82,13 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--paper-curves", action=argparse.BooleanOptionalAction, default=bool(cfg["train"]["paper_curves"]))
     parser.add_argument("--progress-every", type=int, default=10, help="Print training progress every N epochs. Use 0 to disable.")
     parser.add_argument("--stats", action=argparse.BooleanOptionalAction, default=bool(cfg["experiment"].get("use_stats", True)), help="Use statistical side features in the PFDM neural model.")
-    parser.add_argument("--no-cycle-encoding", action="store_true")
+    parser.add_argument(
+        "--cycle-encoding",
+        action=argparse.BooleanOptionalAction,
+        default=bool(cfg["experiment"].get("cycle_encoding", True)),
+    )
     parser.add_argument("--no-frequency-branch", action="store_true")
     parser.add_argument("--no-stress-gate", action="store_true")
-    parser.add_argument("--no-anti-alias", action="store_true")
     parser.add_argument("--min-bpm", type=float, default=float(cfg["model"].get("min_bpm", 50.0)))
     parser.add_argument("--max-bpm", type=float, default=float(cfg["model"].get("max_bpm", 150.0)))
     parser.add_argument("--ppg-dir", type=Path, default=resolve_path(cfg["data"]["ppg_dir"]))
@@ -255,12 +258,11 @@ def build_model(args: argparse.Namespace, stats_size: int) -> DualStreamPFDM:
         sample_rate=float(model_cfg["sample_rate"]),
         stats_size=stats_size,
         use_stats=args.stats,
-        use_cycle_encoding=not args.no_cycle_encoding,
+        use_cycle_encoding=args.cycle_encoding,
         use_frequency_branch=not args.no_frequency_branch,
         use_stress_gate=not args.no_stress_gate,
         min_bpm=args.min_bpm,
         max_bpm=args.max_bpm,
-        use_anti_alias=not args.no_anti_alias,
     )
 
 
@@ -411,7 +413,6 @@ def write_readable_summary(output_dir: Path, args: argparse.Namespace, summary: 
         f"Task mode: `{args.task_mode}`",
         f"Stats side features: `{args.stats}`",
         f"Physiological BPM range: `{args.min_bpm:g}-{args.max_bpm:g}`",
-        f"Anti-alias downsampling: `{not args.no_anti_alias}`",
         f"Alpha: `{args.alpha:.3f}`",
         f"Calibrator: `{args.calibrator_mode}`",
         f"Cross-emotion calibration: `{bool(args.cross_emotion_calibration)}`",

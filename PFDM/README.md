@@ -126,7 +126,6 @@ index, target, model_prediction, calibrator_prediction, prediction
 | `--no-cycle-encoding` | w/o 生理周期编码 |
 | `--no-frequency-branch` | w/o 频域分支 |
 | `--no-stress-gate` | w/o 通道-时间门控 |
-| `--no-anti-alias` | 使用普通步长卷积，关闭抗混叠下采样 |
 | `--min-bpm` / `--max-bpm` | 生理周期编码范围，默认 50-150 bpm |
 
 模型容量、dropout、Transformer 层数、Ridge 正则和输入噪声均从 `config.yaml` 读取。
@@ -203,7 +202,6 @@ python PFDM/train.py --experiment ablate_ppg_narrow_bpm --modalities ppg --task-
 python PFDM/train.py --experiment ablate_ppg_no_cycle --modalities ppg --task-mode uncertainty --calibrator-mode identity_ridge --alpha 0.22 --no-cycle-encoding
 python PFDM/train.py --experiment ablate_ppg_no_freq --modalities ppg --task-mode uncertainty --calibrator-mode identity_ridge --alpha 0.22 --no-frequency-branch
 python PFDM/train.py --experiment ablate_ppg_no_gate --modalities ppg --task-mode uncertainty --calibrator-mode identity_ridge --alpha 0.22 --no-stress-gate
-python PFDM/train.py --experiment ablate_ppg_no_antialias --modalities ppg --task-mode uncertainty --calibrator-mode identity_ridge --alpha 0.22 --no-anti-alias
 ```
 
 双流融合消融：
@@ -305,6 +303,6 @@ PFDM/outputs_baselines/<model>_<modalities>/
 
 ## 说明
 
-生理周期编码按原始 100 Hz 采样率和卷积总降采样倍数 16 计算 token 时间，默认覆盖 50-150 bpm。可通过 `--min-bpm` 和 `--max-bpm` 做范围敏感性实验。
+生理周期编码位于首层卷积后的 20 Hz 早期特征上，按 0.05 s 的位置间隔构造 50-150 bpm 周期基；复合编码完成后再执行两级 4 倍直接抽样，每级保留每 4 个位置中的第一个位置，总下采样倍数为 16。可通过 `--min-bpm` 和 `--max-bpm` 设置周期范围。
 
 当前 `PFDM/outputs/` 可保留多次 PFDM 实验结果目录，每个目录都使用同一套 `summary.md` 汇总格式。根目录下历史 `outputs_paper_*` 不属于 PFDM 最终工程的一部分。

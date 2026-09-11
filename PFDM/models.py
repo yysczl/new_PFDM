@@ -25,30 +25,11 @@ class AttentionPool1d(nn.Module):
         return (x * weights.unsqueeze(-1)).sum(dim=1)
 
 
-class AntiAliasDownsample1d(nn.Module):
-    def __init__(self, channels: int, stride: int = 4) -> None:
-        super().__init__()
-        kernel = torch.tensor([1.0, 4.0, 6.0, 4.0, 1.0])
-        kernel = (kernel / kernel.sum()).view(1, 1, -1).repeat(channels, 1, 1)
-        self.register_buffer("kernel", kernel)
-        self.channels = channels
-        self.stride = stride
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return F.conv1d(
-            x,
-            self.kernel.to(dtype=x.dtype),
-            stride=self.stride,
-            padding=self.kernel.size(-1) // 2,
-            groups=self.channels,
-        )
-
-
 class PhysioCycleEncoding(nn.Module):
     def __init__(
         self,
         channels: int,
-        sample_rate: float = 100.0,
+        sample_rate: float = 20.0,
         downsample_factor: int = 16,
         min_bpm: float = 50.0,
         max_bpm: float = 150.0,
@@ -56,6 +37,16 @@ class PhysioCycleEncoding(nn.Module):
         super().__init__()
         if min_bpm <= 0 or max_bpm <= min_bpm:
             raise ValueError("expected 0 < min_bpm < max_bpm")
+        if sample_rate <= 0:
+            raise ValueError("sample_rate must be positive")
+        if downsample_factor <= 0:
+            raise ValueError("downsample_factor must be positive")
+        token_nyquist_hz = float(sample_rate) / (2.0 * int(downsample_factor))
+        if max_bpm / 60.0 >= token_nyquist_hz:
+            raise ValueError(
+                "cycle frequency must stay below the encoded sequence Nyquist frequency: "
+                f"max_bpm={max_bpm:g}, Nyquist={token_nyquist_hz * 60.0:g} bpm"
+            )
         frequency_count = max(channels // 2, 1)
         self.register_buffer("freqs_hz", torch.linspace(min_bpm / 60.0, max_bpm / 60.0, frequency_count))
         self.sample_rate = float(sample_rate)
@@ -94,45 +85,33 @@ class PPGFormerEncoder(nn.Module):
         transformer_layers: int = 2,
         transformer_heads: int = 4,
         dropout: float = 0.2,
-        sample_rate: float = 100.0,
+        sample_rate: float = 20.0,
         use_cycle_encoding: bool = True,
         use_frequency_branch: bool = True,
         use_stress_gate: bool = True,
         min_bpm: float = 50.0,
         max_bpm: float = 150.0,
-        use_anti_alias: bool = True,
     ) -> None:
         super().__init__()
         self.use_frequency_branch = use_frequency_branch
         self.use_stress_gate = use_stress_gate
 
-        first_downsample: nn.Module
-        second_downsample: nn.Module
-        if use_anti_alias:
-            first_conv = nn.Conv1d(1, channels, kernel_size=9, stride=1, padding=4)
-            first_downsample = AntiAliasDownsample1d(channels, stride=4)
-            second_conv = nn.Conv1d(channels, embedding_size, kernel_size=7, stride=1, padding=3)
-            second_downsample = AntiAliasDownsample1d(embedding_size, stride=4)
-        else:
-            first_conv = nn.Conv1d(1, channels, kernel_size=9, stride=4, padding=4)
-            first_downsample = nn.Identity()
-            second_conv = nn.Conv1d(channels, embedding_size, kernel_size=7, stride=4, padding=3)
-            second_downsample = nn.Identity()
+        self.early_conv = nn.Conv1d(1, channels, kernel_size=9, stride=1, padding=4)
+        # Single-element pooling takes every fourth sample without filtering.
         self.stem = nn.Sequential(
-            first_conv,
-            first_downsample,
+            nn.MaxPool1d(kernel_size=1, stride=4),
             nn.BatchNorm1d(channels),
             nn.GELU(),
             nn.Dropout(dropout),
-            second_conv,
-            second_downsample,
+            nn.Conv1d(channels, embedding_size, kernel_size=7, stride=1, padding=3),
+            nn.MaxPool1d(kernel_size=1, stride=4),
             nn.BatchNorm1d(embedding_size),
             nn.GELU(),
             nn.Dropout(dropout),
         )
 
         self.cycle = (
-            PhysioCycleEncoding(embedding_size, sample_rate, 16, min_bpm, max_bpm)
+            PhysioCycleEncoding(channels, sample_rate, 1, min_bpm, max_bpm)
             if use_cycle_encoding
             else nn.Identity()
         )
@@ -204,8 +183,10 @@ class PPGFormerEncoder(nn.Module):
         return self.frequency_norm(enhanced)
 
     def forward(self, x: torch.Tensor) -> Dict[str, torch.Tensor]:
-        embedding = self.stem(x.transpose(1, 2)).transpose(1, 2)
-        time_features = self.transformer(self.cycle(embedding))
+        early_features = self.early_conv(x.transpose(1, 2)).transpose(1, 2)
+        early_features = self.cycle(early_features)
+        embedding = self.stem(early_features.transpose(1, 2)).transpose(1, 2)
+        time_features = self.transformer(embedding)
 
         conv_input = time_features.transpose(1, 2)
         scale_features = [F.gelu(conv(conv_input)) for conv in self.multi_scale]
@@ -340,7 +321,7 @@ class DualStreamPFDM(nn.Module):
         transformer_layers: int = 2,
         transformer_heads: int = 4,
         dropout: float = 0.2,
-        sample_rate: float = 100.0,
+        sample_rate: float = 20.0,
         num_emotions: int = 5,
         stats_size: int = 22,
         use_stats: bool = False,
@@ -349,7 +330,6 @@ class DualStreamPFDM(nn.Module):
         use_stress_gate: bool = True,
         min_bpm: float = 50.0,
         max_bpm: float = 150.0,
-        use_anti_alias: bool = True,
     ) -> None:
         super().__init__()
         if modalities not in {"ppg", "prv", "both"}:
@@ -373,7 +353,6 @@ class DualStreamPFDM(nn.Module):
                 use_stress_gate,
                 min_bpm,
                 max_bpm,
-                use_anti_alias,
             )
         if modalities in {"prv", "both"}:
             self.prv_encoder = PRVEncoder(prv_channels, embedding_size, dropout)
